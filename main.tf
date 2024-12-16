@@ -62,11 +62,32 @@ data "aws_iam_policy_document" "this_assume_role_policy" {
 }
 
 resource "aws_iam_role" "this" {
-  for_each            = var.iam_roles
-  name                = each.key
-  assume_role_policy  = data.aws_iam_policy_document.this_assume_role_policy[each.key].json
-  managed_policy_arns = each.value.policy_arns
+  for_each           = var.iam_roles
+  name               = each.key
+  assume_role_policy = data.aws_iam_policy_document.this_assume_role_policy[each.key].json
   tags = merge(var.tags, {
     Name = each.key
   })
+}
+
+locals {
+  aws_iam_role_policy_attachment_list = flatten([
+    for k, v in var.iam_roles : [
+      for policy_arn in v.policy_arns : {
+        role_name  = k
+        policy_arn = policy_arn
+      }
+    ]
+  ])
+  aws_iam_role_policy_attachment_map = {
+    for v in local.aws_iam_role_policy_attachment_list : "${v.role_name}/${v.policy_arn}" => v
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "this" {
+  depends_on = [aws_iam_role.this]
+  for_each   = local.aws_iam_role_policy_attachment_map
+
+  role       = each.value.role_name
+  policy_arn = each.value.policy_arn
 }
